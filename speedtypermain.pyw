@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox, font
+from unittest import defaultTestLoader
 import pyodbc as db
 import nltk
 import random
@@ -18,6 +19,7 @@ class Login:
         self.welcomemenu.title("Welcome")
         self.welcomemenu.geometry("400x300")
         self.welcomemenu.configure(bg="#f0f4f8")
+        self.welcomemenu.bind("<Escape>", self.on_escape) 
 
         title_font = font.Font(family="Courier", size=18, weight="bold")
         button_font = font.Font(family="Courier", size=12)
@@ -46,6 +48,7 @@ class Login:
         self.registerwin.title('Register')
         self.registerwin.geometry("400x300")
         self.registerwin.configure(bg="#f0f4f8")
+        self.registerwindow.bind("<Escape>", self.on_escape) 
 
         label_font = font.Font(family="Courier", size=12)
         entry_font = font.Font(family="Courier", size=12)
@@ -58,12 +61,14 @@ class Login:
         tk.Label(self.registerwin, text="Password", font=label_font, bg="#f0f4f8").pack(pady=5)
         self.password_field = tk.Entry(self.registerwin, show="*", font=entry_font)
         self.password_field.pack(pady=5)
+        self.password_field.bind("<Return>", lambda event: self.register())
 
         self.register_butt = tk.Button(self.registerwin, text="Register", font=button_font, width=15, command=self.register)
         self.register_butt.pack(pady=10)
 
         self.back_butt = tk.Button(self.registerwin, text="Back", font=button_font, width=15, command=self.backmenu_from_register)
         self.back_butt.pack(pady=5)
+
 
     def backmenu_from_register(self):
         self.registerwin.destroy()
@@ -93,6 +98,7 @@ class Login:
         self.loginwin.title('Login')
         self.loginwin.geometry("400x300")
         self.loginwin.configure(bg="#f0f4f8")
+        self.loginwin.bind("<Escape>", self.on_escape) 
 
         label_font = font.Font(family="Courier", size=12)
         entry_font = font.Font(family="Courier", size=12)
@@ -105,12 +111,14 @@ class Login:
         tk.Label(self.loginwin, text="Password", font=label_font, bg="#f0f4f8").pack(pady=5)
         self.password_field = tk.Entry(self.loginwin, show="*", font=entry_font)
         self.password_field.pack(pady=5)
+        self.password_field.bind("<Return>", lambda event: self.login())
 
         self.login_butt = tk.Button(self.loginwin, text="Enter", font=button_font, width=15, command=self.login)
         self.login_butt.pack(pady=10)
 
         self.back_butt = tk.Button(self.loginwin, text="Back", font=button_font, width=15, command=self.backmenu_from_login)
         self.back_butt.pack(pady=5)
+
 
     def backmenu_from_login(self):
         self.loginwin.destroy()
@@ -126,11 +134,13 @@ class Login:
             self.NewGame()
         else:
             messagebox.showwarning('Login Failed', 'Incorrect name or password or user does not exist.')
+    
     def NewGame(self):
         self.newgamewin = tk.Tk()
         self.newgamewin.title('SpeedTyper')
-        self.newgamewin.geometry("1000x300")
+        self.newgamewin.geometry("20000x600")
         self.newgamewin.configure(bg="#f0f4f8")
+        self.newgamewin.bind("<Escape>", self.on_escape) 
         title_font = font.Font(family="Courier", size=18, weight="bold")
         wordlist_font = font.Font(family="Courier", size=14)
         word_list = words.words()
@@ -140,7 +150,7 @@ class Login:
         ]
         unique_words = list(set(filtered_words))
         random.shuffle(unique_words)
-        selected_words = unique_words[:300] #300 so as to not run out nor overload the program
+        selected_words = unique_words[:250] #250 so as to not run out nor overload the program
         self.words = selected_words
         self.current_word_index = 0
         self.errors = []
@@ -157,10 +167,12 @@ class Login:
             highlightthickness=0,
             wrap="none"
         )
+        # will enter timer and word count here later. 
+
         self.word_window.tag_configure("center", justify='center')
-        self.word_window.pack(pady=(40, 0))
-        self.input_field = tk.Entry(self.newgamewin, font=title_font, width=50)
-        self.input_field.pack(pady=(5, 20))
+        self.word_window.pack(pady=(50, 0))
+        self.input_field = tk.Entry(self.newgamewin, font=title_font, width=50,)
+        self.input_field.pack(pady=(30, 20))
         self.input_field.focus_set()
         self.input_field.bind("<KeyRelease>", self.on_key_release)
 
@@ -170,7 +182,7 @@ class Login:
         self.word_window.config(state=tk.NORMAL)
         self.word_window.delete("1.0", tk.END)
 
-        window_size = 11  # Total words to show (odd number for centering)
+        window_size = 9  # Total words to show (odd number for centering, ensure less than the entry box width)
         half_window = window_size // 2
         total_words = len(self.words)
 
@@ -179,7 +191,7 @@ class Login:
         end = min(total_words, self.current_word_index + half_window + 1)
 
         # Adjust window if at the start or end
-        if self.current_word_index < half_window:
+        if self.current_word_index < (half_window):
             end = min(window_size, total_words)
         elif self.current_word_index + half_window >= total_words:
             start = max(0, total_words - window_size)
@@ -188,8 +200,8 @@ class Login:
         # Tag configuration
         self.word_window.tag_configure("done_correct", foreground="green")
         self.word_window.tag_configure("done_wrong", foreground="red")
-        self.word_window.tag_configure("current", foreground="black", underline=1)
-        self.word_window.tag_configure("current_wrong", foreground="red", underline=1)
+        self.word_window.tag_configure("current", foreground="black", font=font.BOLD)
+        self.word_window.tag_configure("current_wrong", foreground="red", font=font.BOLD)
         self.word_window.tag_configure("future", foreground="gray")
 
         for idx in range(start, end):
@@ -207,7 +219,7 @@ class Login:
             else:
                 self.word_window.insert(tk.END, word + " ", "future")
 
-        self.word_window.tag_add("center", "1.0", "end")
+        self.word_window.tag_add("left", "1.0", "end")
         self.word_window.config(state=tk.DISABLED)
 
     def on_key_release(self, event):
@@ -246,8 +258,23 @@ class Login:
                 self.input_field.delete(0, tk.END)
                 self.update_word_window("")
             else:
-                messagebox.showinfo("Game Over", "You've completed all words!\nErrors: " + ", ".join(self.errors))
+                messagebox.showinfo("Game Over", "You've completed all words!" + ", ".join(self.errors))
                 self.newgamewin.destroy()
+
+    def on_escape(self, event):
+        # Cleanly close all windows and exit
+        root = tk._default_root
+        windows = [root] + list(root.children.values())
+
+        for win in windows:
+            try:
+                win.destroy()
+            except:
+                pass
+        try:
+            root.quit()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     app = Login()
