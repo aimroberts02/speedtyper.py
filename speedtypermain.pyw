@@ -141,6 +141,9 @@ class Login:
         self.newgamewin.geometry("20000x600")
         self.newgamewin.configure(bg="#f0f4f8")
         self.newgamewin.bind("<Escape>", self.on_escape) 
+        self.time_left = True # Global variable to control the game loop
+
+
         title_font = font.Font(family="Courier", size=18, weight="bold")
         wordlist_font = font.Font(family="Courier", size=14)
         word_list = words.words()
@@ -153,8 +156,13 @@ class Login:
         selected_words = unique_words[:250] #250 so as to not run out nor overload the program
         self.words = selected_words
         self.current_word_index = 0
-        self.errors = []
         self.word_results = [None] * len(self.words)  # None = not attempted, True = correct, False = incorrect
+        #statistics measuring
+        self.total_word_count = 0
+        self.correct_word_count = 0
+        self.backspace_count = 0
+        self.error_substr = []
+
 
         # Use a Text widget for colored word window, centered and matching entry width
         self.word_window = tk.Text(
@@ -169,6 +177,8 @@ class Login:
         )
         # will enter timer and word count here later. 
 
+
+
         self.word_window.tag_configure("center", justify='center')
         self.word_window.pack(pady=(50, 0))
         self.input_field = tk.Entry(self.newgamewin, font=title_font, width=50,)
@@ -179,102 +189,107 @@ class Login:
         self.update_word_window("")  # Initial display
 
     def update_word_window(self, typed):
-        self.word_window.config(state=tk.NORMAL)
-        self.word_window.delete("1.0", tk.END)
+            self.word_window.config(state=tk.NORMAL)
+            self.word_window.delete("1.0", tk.END)
 
-        window_size = 9  # Total words to show (odd number for centering, ensure less than the entry box width)
-        half_window = window_size // 2
-        total_words = len(self.words)
+            window_size = 9  # Total words to show (odd number for centering, ensure less than the entry box width)
+            half_window = window_size // 2
+            total_words = len(self.words)
 
-        # Calculate window bounds
-        start = max(0, self.current_word_index - half_window)
-        end = min(total_words, self.current_word_index + half_window + 1)
+            # Calculate window bounds
+            start = max(0, self.current_word_index - half_window)
+            end = min(total_words, self.current_word_index + half_window + 1)
 
-        # Adjust window if at the start or end
-        if self.current_word_index < (half_window):
-            end = min(window_size, total_words)
-        elif self.current_word_index + half_window >= total_words:
-            start = max(0, total_words - window_size)
-            end = total_words
+            # Adjust window if at the start or end
+            if self.current_word_index < (half_window):
+                end = min(window_size, total_words)
+            elif self.current_word_index + half_window >= total_words:
+                start = max(0, total_words - window_size)
+                end = total_words
 
-        # Tag configuration
-        self.word_window.tag_configure("done_correct", foreground="green")
-        self.word_window.tag_configure("done_wrong", foreground="red")
-        self.word_window.tag_configure("current", foreground="black", font=font.BOLD)
-        self.word_window.tag_configure("current_wrong", foreground="red", font=font.BOLD)
-        self.word_window.tag_configure("future", foreground="gray")
+            # Tag configuration
+            self.word_window.tag_configure("done_correct", foreground="green")
+            self.word_window.tag_configure("done_wrong", foreground="red")
+            self.word_window.tag_configure("current", foreground="black", font=font.BOLD)
+            self.word_window.tag_configure("current_wrong", foreground="red", font=font.BOLD)
+            self.word_window.tag_configure("future", foreground="gray")
 
-        for idx in range(start, end):
-            word = self.words[idx]
-            if idx < self.current_word_index:
-                if self.word_results[idx] is True:
-                    self.word_window.insert(tk.END, word + " ", "done_correct")
+            for idx in range(start, end):
+                word = self.words[idx]
+                if idx < self.current_word_index:
+                    if self.word_results[idx] is True:
+                        self.word_window.insert(tk.END, word + " ", "done_correct")
+
+                    else:
+                        self.word_window.insert(tk.END, word + " ", "done_wrong")
+
+                elif idx == self.current_word_index:
+                    if typed and not word.startswith(typed):
+                        self.word_window.insert(tk.END, word + " ", "current_wrong")
+                    else:
+                        self.word_window.insert(tk.END, word + " ", "current")
                 else:
-                    self.word_window.insert(tk.END, word + " ", "done_wrong")
-            elif idx == self.current_word_index:
-                if typed and not word.startswith(typed):
-                    self.word_window.insert(tk.END, word + " ", "current_wrong")
-                else:
-                    self.word_window.insert(tk.END, word + " ", "current")
-            else:
-                self.word_window.insert(tk.END, word + " ", "future")
+                    self.word_window.insert(tk.END, word + " ", "future")
 
-        self.word_window.tag_add("left", "1.0", "end")
-        self.word_window.config(state=tk.DISABLED)
+            self.word_window.tag_add("left", "1.0", "end")
+            self.word_window.config(state=tk.DISABLED)
 
     def on_key_release(self, event):
-        typed = self.input_field.get()
-        current_word = self.words[self.current_word_index]
+            typed = self.input_field.get()
+            current_word = self.words[self.current_word_index]
 
-        # Live feedback: update word window with color
-        self.update_word_window(typed)
+            # Live feedback: update word window with color
+            self.update_word_window(typed)
 
-        # If space is pressed, check errors, advance word, and reset input
-        if event.keysym == "space":
-            typed_word = typed.strip()
-            # Check for errors and correctness
-            correct = typed_word == current_word
-            self.word_results[self.current_word_index] = correct
+            if event.keysym == "BackSpace":
+                self.backspace_count += 1
 
-            for i, (typed_char, correct_char) in enumerate(zip(typed_word, current_word)):
-                if typed_char != correct_char:
-                    before = current_word[i-1] if i > 0 else " "
-                    after = current_word[i+1] if i+1 < len(current_word) else " "
-                    self.errors.append(f"{before}[{typed_char}->{correct_char}]{after}")
-            if len(typed_word) < len(current_word):
-                for i in range(len(typed_word), len(current_word)):
-                    before = current_word[i-1] if i > 0 else " "
-                    after = current_word[i+1] if i+1 < len(current_word) else " "
-                    self.errors.append(f"{before}[->{current_word[i]}]{after}")
-            elif len(typed_word) > len(current_word):
-                for i in range(len(current_word), len(typed_word)):
-                    before = typed_word[i-1] if i > 0 else " "
-                    after = " "
-                    self.errors.append(f"{before}[{typed_word[i]}->]{after}")
+            # If space is pressed, check errors, advance word, and reset input
+            if event.keysym == "space":
+                typed_word = typed.strip()
+                correct = typed_word == current_word
+                self.word_results[self.current_word_index] = correct
 
-            # Advance to next word
-            self.current_word_index += 1
-            if self.current_word_index < len(self.words):
-                self.input_field.delete(0, tk.END)
-                self.update_word_window("")
-            else:
-                messagebox.showinfo("Game Over", "You've completed all words!" + ", ".join(self.errors))
-                self.newgamewin.destroy()
+                # Count completed words only once
+                self.total_word_count += 1
+                if correct:
+                    self.correct_word_count += 1
+                elif current_word != "":
+                    # Collect error substrings for incorrect words
+                    for i in range(len(current_word)):
+                        typed_c = typed_word[i] if i < len(typed_word) else ""
+                        correct_c = current_word[i]
+                        if typed_c != correct_c:
+                            before = current_word[i-1] if i > 0 else " "
+                            after = current_word[i+1] if i+1 < len(current_word) else " "
+                            self.error_substr.append(f"{before}[{correct_c}]{after}")
+
+                # Advance to next word
+                self.current_word_index += 1
+                if self.current_word_index < len(self.words):
+                    self.input_field.delete(0, tk.END)
+                    self.update_word_window("")
+                else:
+                    messagebox.showinfo(
+                        "Game Over",
+                        f"Total: {self.total_word_count}\nCorrect: {self.correct_word_count}\nErrors:\n" + "\n".join(self.error_substr)
+                    )
+                    self.newgamewin.destroy()
 
     def on_escape(self, event):
-        # Cleanly close all windows and exit
-        root = tk._default_root
-        windows = [root] + list(root.children.values())
+            # Cleanly close all windows and exit
+            root = tk._default_root
+            windows = [root] + list(root.children.values())
 
-        for win in windows:
+            for win in windows:
+                try:
+                    win.destroy()
+                except:
+                    pass
             try:
-                win.destroy()
-            except:
+                root.quit()
+            except Exception:
                 pass
-        try:
-            root.quit()
-        except Exception:
-            pass
 
 if __name__ == "__main__":
     app = Login()
