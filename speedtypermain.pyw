@@ -218,7 +218,6 @@ class TyperGame:
         self.keystroke_count = 0
 
 
-
         # ------------------------------create an adaptive word list -----------------------------------------#
         word_list = words.words()
         filtered_words = [
@@ -231,10 +230,12 @@ class TyperGame:
         self.selected_words = []
 
         #check errors exist
-        cursor.execute("SELECT COUNT(*) FROM ErrorLog WHERE User_ID = ?", (self.CurrentUser,))
-        if cursor.fetchone()[0] == 0:
+        cursor.execute("SELECT * FROM ErrorLog WHERE User_ID = ?", (self.CurrentUser,))
+        if cursor.fetchone():
             self.selected_words = random.sample(unique_words, word_set_size)
             messagebox.showinfo("No Errors", "Cannot access error data.")
+            self.current_word_index = 0
+            self.word_results = [None] * len(self.selected_words)
         else:
             three_days = datetime.now() - timedelta(hours=36)
             seven_days = datetime.now() - timedelta(hours=168)
@@ -441,7 +442,7 @@ class TyperGame:
             
             self.game_butt = tk.Button(self.endwin, text="New Game", font=button_font, width=10, command=self.beginagain)
             self.game_butt.pack(pady=10)
-            self.logout_butt = tk.Button(self.endwin, text="Logout", font=button_font, width=10, command=self.backloggout)
+            self.logout_butt = tk.Button(self.endwin, text="Log Out", font=button_font, width=10, command=self.backloggout)
             self.logout_butt.pack(pady=10)
     def beginagain(self):
         self.endwin.destroy()
