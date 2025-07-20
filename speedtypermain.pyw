@@ -441,7 +441,7 @@ class TyperGame:
             
             self.game_butt = tk.Button(self.endwin, text="New Game", font=button_font, width=10, command=self.beginagain)
             self.game_butt.pack(pady=10)
-            self.logout_butt = tk.Button(self.endwin, text="Quit", font=button_font, width=10, command=self.backloggout)
+            self.logout_butt = tk.Button(self.endwin, text="Logout", font=button_font, width=10, command=self.backloggout)
             self.logout_butt.pack(pady=10)
     def beginagain(self):
         self.endwin.destroy()
