@@ -1,4 +1,5 @@
 from ast import Attribute
+from sqlite3 import Row
 import tkinter as tk
 from tkinter import messagebox, font
 from unittest import defaultTestLoader
@@ -9,6 +10,7 @@ import random
 from nltk.corpus import words
 import time
 import datetime
+from datetime import datetime, timedelta
 import re 
 # Ensure you have the words corpus downloaded
 nltk.download('words')
@@ -25,6 +27,7 @@ class TyperGame:
         self.welcomemenu.geometry("400x300")
         self.welcomemenu.configure(bg="#f0f4f8")
         self.welcomemenu.bind("<Escape>", self.on_escape) 
+        self.CurrentUser = 0
 
         title_font = font.Font(family="Courier", size=18, weight="bold")
         button_font = font.Font(family="Courier", size=12)
@@ -141,8 +144,7 @@ class TyperGame:
         cnxn.commit()
         cursor.execute("SELECT ID FROM Users WHERE Name = ?;", (username,))
         userid = cursor.fetchone()
-        self.CurrentUser = userid.ID
-        cnxn.commit()
+        self.CurrentUser = userid[0]
         self.username_field.delete(0, tk.END)
         self.password_field.delete(0, tk.END)
         messagebox.showinfo('Registration Successful', 'You have successfully registered!')
@@ -187,18 +189,15 @@ class TyperGame:
         username = self.username_field.get()
         passwrd = self.password_field.get()
         cursor.execute("SELECT * FROM Users WHERE Name = ? AND Pass = ?;", (username, passwrd))
-        booluser = cursor.fetchone()
+        row = cursor.fetchone()
+        self.CurrentUser = row[0]
         cnxn.commit()
-        if booluser:
+        if row:
             self.loginwin.destroy()
             self.NewGame()
         else:
             messagebox.showwarning('Login Failed', 'Incorrect name or password or user does not exist.')
-
-        cursor.execute("SELECT ID FROM Users WHERE Name = ?", (username,))
-        userid = cursor.fetchone()
-        self.CurrentUser = userid.ID
-    
+       
     def NewGame(self):
 
         self.newgamewin = tk.Tk()
@@ -206,28 +205,83 @@ class TyperGame:
         self.newgamewin.geometry("20000x600")
         self.newgamewin.configure(bg="#f0f4f8")
         self.newgamewin.bind("<Escape>", self.on_escape) 
+
+        
+        title_font = font.Font(family="Courier", size=18, weight="bold")
+        wordlist_font = font.Font(family="Courier", size=14)
+
         self.time_left = True # Global variable to control the game loop
         self.time_limit = 10 #1 minute time limit
         self.time_left = self.time_limit
         self.timer_started = False
-        self.keystroke_count = 0 
         self.timer_label = tk.Label(self.newgamewin, text=f"{self.time_left}", font=("Courier", 20), bg="#f0f4f8")
         self.timer_label.pack(pady=(10, 0))
+        self.keystroke_count = 0
 
-        title_font = font.Font(family="Courier", size=18, weight="bold")
-        wordlist_font = font.Font(family="Courier", size=14)
+
+
+        # ------------------------------create an adaptive word list -----------------------------------------#
         word_list = words.words()
         filtered_words = [
             w.lower() for w in word_list
             if 3 <= len(w) <= 7 and w.isalpha() and w.islower()
         ]
-        # Shuffle and select a subset of words
         unique_words = list(set(filtered_words))
-        random.shuffle(unique_words)
-        selected_words = unique_words[:250] #250 so as to not run out nor overload the program
-        self.words = selected_words
-        self.current_word_index = 0
-        self.word_results = [None] * len(self.words)  # None = not attempted, True = correct, False = incorrect
+        #250 so as to not run out nor overload the program
+        word_set_size = 250
+        self.selected_words = []
+
+        #check errors exist
+        cursor.execute("SELECT COUNT(*) FROM ErrorLog WHERE User_ID = ?", (self.CurrentUser,))
+        if cursor.fetchone()[0] == 0:
+            self.selected_words = random.sample(unique_words, word_set_size)
+            messagebox.showinfo("No Errors", "Cannot access error data.")
+        else:
+            three_days = datetime.now() - timedelta(hours=36)
+            seven_days = datetime.now() - timedelta(hours=168)
+
+            bias = []
+
+            # First bias window
+            cursor.execute("SELECT Error FROM ErrorLog WHERE User_ID = ? AND TimeData >= ?", (self.CurrentUser, three_days))
+            error_parts = [row.Error for row in cursor.fetchall()]
+            percent = 0.05
+            bias_section = []
+
+            for l in error_parts:
+                for w in unique_words:
+                    if len(bias_section) >= word_set_size * percent:
+                        break
+                    if l in w or (l.startswith(" ") and l[1:2] == w[0:1]) or (len(l) > 2 and l[2] == " " and l[0:1] == w[-2:]):
+                        bias_section.append(w)
+            bias.extend(bias_section)
+
+            # Second bias window
+            cursor.execute("""
+                SELECT Error FROM ErrorLog
+                WHERE User_ID = ? AND TimeData >= ? AND TimeData <= ?;
+            """, (self.CurrentUser, three_days, seven_days))
+            error_parts = [row.Error for row in cursor.fetchall()]
+            percent = 0.01
+            bias_section = []
+
+            for l in error_parts:
+                for w in unique_words:
+                    if len(bias_section) >= word_set_size * percent:
+                        break
+                    if l in w or (l.startswith(" ") and l[1:2] == w[0:1]) or (len(l) > 2 and l[2] == " " and l[0:1] == w[-2:]):
+                        bias_section.append(w)
+            bias.extend(bias_section)
+
+            # Final selection
+            if len(bias) < word_set_size:
+                additional = random.sample(unique_words, word_set_size - len(bias))
+                bias.extend(additional)
+            self.selected_words = random.sample(bias, word_set_size)
+
+            self.current_word_index = 0
+            self.word_results = [None] * len(self.selected_words)
+
         #statistics measuring
 
         self.total_word_count = 0
@@ -248,8 +302,6 @@ class TyperGame:
             wrap="none"
         )
 
-
-
         self.word_window.tag_configure("center", justify='center')
         self.word_window.pack(pady=(50, 0))
         self.input_field = tk.Entry(self.newgamewin, font=title_font, width=50,)
@@ -266,7 +318,7 @@ class TyperGame:
 
             window_size = 9  # Total words to show (odd number for centering, ensure less than the entry box width)
             half_window = window_size // 2
-            total_words = len(self.words)
+            total_words = len(self.selected_words)
 
             # Calculate window bounds
             start = max(0, self.current_word_index - half_window)
@@ -287,7 +339,7 @@ class TyperGame:
             self.word_window.tag_configure("future", foreground="gray")
 
             for idx in range(start, end):
-                word = self.words[idx]
+                word = self.selected_words[idx]
                 if idx < self.current_word_index:
                     if self.word_results[idx] is True:
                         self.word_window.insert(tk.END, word + " ", "done_correct")
@@ -306,33 +358,44 @@ class TyperGame:
             self.word_window.tag_add("left", "1.0", "end")
             self.word_window.config(state=tk.DISABLED)
 
+    def RecapPage(self):
+        self.NewGame.destroy()
+        self.endgame()
     def endgame(self):
         # Save game results to database
+
+        self.endwin = tk.Tk()
+        self.endwin.title('Game Over')
+        self.endwin.geometry("400x300")
+        self.endwin.configure(bg="#f0f4f8")
+        self.endwin.bind("<Escape>", self.on_escape) 
+        self.endwin.focus()
+
+        label_font = font.Font(family="Courier", size=12)
+        entry_font = font.Font(family="Courier", size=12)
+        button_font = font.Font(family="Courier", size=12)
+
+
+
         if self.CurrentUser is not None:
             user = self.CurrentUser
             accuracy = (self.correct_word_count / self.total_word_count) * 100 if self.total_word_count > 0 else 0
             confidence = (100 - ((self.backspace_count / self.keystroke_count)*100)) if self.keystroke_count > 0 else 0
             speed = (self.total_word_count / self.time_limit) * 60 if self.time_limit > 0 else 0
             # saving gameresults to database
-            cursor.execute("INSERT INTO GameLog (Gametime, User_ID, Accuracy, Confidence, Speed) VALUES (?, ?, ?, ?, ?);",(datetime.datetime.now(), user, accuracy, confidence, speed))
+            cursor.execute("INSERT INTO GameLog (Gametime, User_ID, Accuracy, Confidence, Speed) VALUES (?, ?, ?, ?, ?);",(datetime.now(), user, accuracy, confidence, speed))
             cnxn.commit()
             #tracking which errors came up
             for error in self.error_substr:
-                cursor.execute("INSERT INTO ErrorLog (User_ID, Error, TimeData) VALUES (?, ?, ?);", (user, error, datetime.datetime.now()))
+                cursor.execute("INSERT INTO ErrorLog (User_ID, Error, TimeData) VALUES (?, ?, ?);", (user, error, datetime.now()))
             cnxn.commit()
-            #checking results are in the database
-            cursor.execute("SELECT * FROM GameLog WHERE User_ID = ?;", (user,))
-            row = cursor.fetchone()
-            messagebox.showinfo(
-                "Time's Up!", f"words {row.Speed}, accuracy {row.Accuracy}, confidence {row.Confidence}, time {row.Gametime}.\nErrors:\n" + "\n".join(self.error_substr)
-            )
 
     def on_key_release(self, event):
             if not self.timer_started and event.keysym != "BackSpace":
                 self.timer_started = True
                 self.update_timer()
             typed = self.input_field.get()
-            current_word = self.words[self.current_word_index]
+            current_word = self.selected_words[self.current_word_index]
 
             self.keystroke_count +=1 
 
@@ -364,7 +427,7 @@ class TyperGame:
 
                 # Advance to next word
                 self.current_word_index += 1
-                if self.current_word_index < len(self.words):
+                if self.current_word_index < len(self.selected_words):
                     self.input_field.delete(0, tk.END)
                     self.update_word_window("")
                 else:
