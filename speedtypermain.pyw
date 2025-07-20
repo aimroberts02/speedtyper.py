@@ -1,15 +1,13 @@
-from ast import Attribute
-from sqlite3 import Row
 import tkinter as tk
 from tkinter import messagebox, font
-from unittest import defaultTestLoader
-from matplotlib.pylab import f
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg)
+from matplotlib.figure import Figure
 import pyodbc as db
 import nltk
 import random
+import numpy
 from nltk.corpus import words
-import time
-import datetime
 from datetime import datetime, timedelta
 import re 
 # Ensure you have the words corpus downloaded
@@ -19,6 +17,7 @@ nltk.download('words')
 db.drivers()
 cnxn = db.connect(driver="Microsoft Access Driver (*.mdb, *.accdb)", DBQ="C:/Users/aimro/OneDrive/Documents/Visual Studio 2022/Projects/speedtyper.py/speedtypedb.accdb")
 cursor = cnxn.cursor()
+
 
 class TyperGame:
     def __init__(self):
@@ -190,11 +189,11 @@ class TyperGame:
         passwrd = self.password_field.get()
         cursor.execute("SELECT * FROM Users WHERE Name = ? AND Pass = ?;", (username, passwrd))
         row = cursor.fetchone()
-        self.CurrentUser = row[0]
         cnxn.commit()
         if row:
             self.loginwin.destroy()
             self.NewGame()
+            self.CurrentUser = row[0]
         else:
             messagebox.showwarning('Login Failed', 'Incorrect name or password or user does not exist.')
        
@@ -211,7 +210,7 @@ class TyperGame:
         wordlist_font = font.Font(family="Courier", size=14)
 
         self.time_left = True # Global variable to control the game loop
-        self.time_limit = 10 #1 minute time limit
+        self.time_limit = 60 #1 minute time limit
         self.time_left = self.time_limit
         self.timer_started = False
         self.timer_label = tk.Label(self.newgamewin, text=f"{self.time_left}", font=("Courier", 20), bg="#f0f4f8")
@@ -243,7 +242,7 @@ class TyperGame:
             bias = []
 
             # First bias window
-            cursor.execute("SELECT Error FROM ErrorLog WHERE User_ID = ? AND TimeData >= ?", (self.CurrentUser, three_days))
+            cursor.execute("SELECT Error FROM ErrorLog WHERE User_ID = ? AND TimeData <= ?", (self.CurrentUser, three_days))
             error_parts = [row.Error for row in cursor.fetchall()]
             percent = 0.05
             bias_section = []
@@ -359,36 +358,118 @@ class TyperGame:
             self.word_window.config(state=tk.DISABLED)
 
     def RecapPage(self):
-        self.NewGame.destroy()
+        self.newgamewin.destroy()
         self.endgame()
+
     def endgame(self):
         # Save game results to database
 
         self.endwin = tk.Tk()
         self.endwin.title('Game Over')
-        self.endwin.geometry("400x300")
+        self.endwin.geometry("400x500")
         self.endwin.configure(bg="#f0f4f8")
         self.endwin.bind("<Escape>", self.on_escape) 
         self.endwin.focus()
 
         label_font = font.Font(family="Courier", size=12)
-        entry_font = font.Font(family="Courier", size=12)
         button_font = font.Font(family="Courier", size=12)
-
-
-
+        title_font = font.Font(family="Courier", size=18, weight="bold") 
+        
         if self.CurrentUser is not None:
-            user = self.CurrentUser
+            
             accuracy = (self.correct_word_count / self.total_word_count) * 100 if self.total_word_count > 0 else 0
             confidence = (100 - ((self.backspace_count / self.keystroke_count)*100)) if self.keystroke_count > 0 else 0
             speed = (self.total_word_count / self.time_limit) * 60 if self.time_limit > 0 else 0
             # saving gameresults to database
-            cursor.execute("INSERT INTO GameLog (Gametime, User_ID, Accuracy, Confidence, Speed) VALUES (?, ?, ?, ?, ?);",(datetime.now(), user, accuracy, confidence, speed))
+            cursor.execute("INSERT INTO GameLog (Gametime, User_ID, Accuracy, Confidence, Speed) VALUES (?, ?, ?, ?, ?);",(datetime.now(), self.CurrentUser, accuracy, confidence, speed))
             cnxn.commit()
             #tracking which errors came up
             for error in self.error_substr:
-                cursor.execute("INSERT INTO ErrorLog (User_ID, Error, TimeData) VALUES (?, ?, ?);", (user, error, datetime.now()))
+                cursor.execute("INSERT INTO ErrorLog (User_ID, Error, TimeData) VALUES (?, ?, ?);", (self.CurrentUser, error, datetime.now()))
             cnxn.commit()
+
+            tk.Label(self.endwin, text="Game Over!", font=title_font, bg="#f0f4f8").pack(pady=(20, 10))
+            tk.Label(self.endwin, text=f"Words per Minute: {speed: .2f}", font=label_font, bg="#f0f4f8").pack(pady=5)
+            tk.Label(self.endwin, text=f"Accuracy: {accuracy:.2f}%", font=label_font, bg="#f0f4f8").pack(pady=5)
+            tk.Label(self.endwin, text=f"Confidence: {confidence:.2f}%", font=label_font, bg="#f0f4f8").pack(pady=5)
+
+
+            # ---------------------------------------- Create graphs and buttons for stats-----------------------------------------#
+            #speed over time graph
+
+            week = datetime.now() - timedelta(days=7)
+
+            cursor.execute("SELECT TOP 20 * FROM GameLog WHERE User_ID = ? ORDER BY Gametime;", (self.CurrentUser,))
+            rows = cursor.fetchall()
+            speed_ylist = [row.Speed for row in rows]
+            speed_xlist = []
+            for i in range(len(speed_ylist)):
+                if speed_ylist[i] is None:
+                    speed_ylist[i] = 0
+                else: 
+                    speed_xlist.append(i)
+            print (week)
+
+            if not speed_xlist or not speed_ylist:
+                messagebox.showwarning("No Data", "No speed data available for graphing.")
+                return
+          
+            self.Speed_butt = tk.Button(self.endwin, text="Speed", font=button_font, width=15, command=lambda: self.statswin("Words Per Minute",speed_xlist, speed_ylist))
+            self.Speed_butt.pack(pady=10)
+
+            #accuracy over time
+            acc_xlist = speed_xlist
+            acc_ylist = [row.Accuracy for row in rows]
+            if not acc_xlist or not acc_ylist:
+                messagebox.showwarning("No Data", "No accuracy data available for graphing.")
+                return
+
+
+            self.Acc_butt = tk.Button(self.endwin, text="% Accuracy", font=button_font, width=15, command=lambda: self.statswin(" % Accuracy",acc_xlist, acc_ylist))
+            self.Acc_butt.pack(pady=10)
+
+            #confidence over time
+            conf_xlist = speed_xlist
+            conf_ylist = [row.Confidence for row in rows]
+            if not conf_xlist or not conf_ylist:
+                messagebox.showwarning("No Data", "No confidence data available for graphing.")
+                return
+         
+            self.Confidence_butt = tk.Button(self.endwin, text="% Confidence", font=button_font, width=15, command=lambda: self.statswin(" % Confidence", conf_xlist, conf_ylist))
+            self.Confidence_butt.pack(pady=10)
+
+            
+            self.game_butt = tk.Button(self.endwin, text="New Game", font=button_font, width=10, command=self.beginagain)
+            self.game_butt.pack(pady=10)
+            self.logout_butt = tk.Button(self.endwin, text="Quit", font=button_font, width=10, command=self.backloggout)
+            self.logout_butt.pack(pady=10)
+    def beginagain(self):
+        self.endwin.destroy()
+        plt.close('all')  # Close all matplotlib figures
+        self.NewGame()
+    
+    def backloggout(self):
+        self.endwin.destroy()
+        CurrentUser = 0 # Reset current user to 0
+        self.__init__()
+
+    def statswin(self, name, xlist, ylist):
+        fig = Figure(figsize=(6, 5), dpi=100)
+        ax = fig.add_subplot(1, 1, 1)
+        ax.clear()
+        fig, ax = plt.subplots()
+        ax.plot(xlist, ylist)  
+        ax.set_title(f"{name} Over 20 Games")
+        y_max = max(ylist)
+        yticks = numpy.arange(0, y_max + 10, 10.0)
+        ax.set_yticks(yticks)
+        ax.set_ylabel(name)
+        ax.set_ylim(bottom=0, top = y_max)
+
+        ax.set_xticks([]) 
+
+        plt.setp(ax.get_yticklabels(), rotation=45, ha='right')
+        plt.show()
 
     def on_key_release(self, event):
             if not self.timer_started and event.keysym != "BackSpace":
@@ -431,7 +512,7 @@ class TyperGame:
                     self.input_field.delete(0, tk.END)
                     self.update_word_window("")
                 else:
-                    self.endgame()
+                    self.RecapPage()
 
     def update_timer(self):
         if self.time_left > 0:
@@ -439,8 +520,7 @@ class TyperGame:
             self.timer_label.config(text=f"{self.time_left}")
             self.newgamewin.after(1000, self.update_timer)
         else:
-            self.endgame()
-            self.newgamewin.destroy()
+            self.RecapPage()
            
     def on_escape(self, event):
             # Cleanly close all windows and exit
@@ -456,6 +536,7 @@ class TyperGame:
                 root.quit()
             except Exception:
                 pass
+
 
 if __name__ == "__main__":
     app = TyperGame()
